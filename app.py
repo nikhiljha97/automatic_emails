@@ -228,7 +228,219 @@ def send_email(to, cc, subject, plain_body, html_body, attachment_bytes, attachm
 
 # ── routes ───────────────────────────────────────────────────────────────────
 
-HTML_PAGE = open(os.path.join(os.path.dirname(__file__), "templates", "index.html")).read()
+HTML_PAGE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Device Expiry Report</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 14px; background: #f4f6f9; color: #222; min-height: 100vh; }
+  .topbar { background: #1a1a2e; color: #fff; padding: 14px 28px; display: flex; align-items: center; gap: 12px; }
+  .topbar h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.01em; }
+  .topbar .dot { width: 10px; height: 10px; border-radius: 50%; background: #4ade80; }
+  .layout { max-width: 860px; margin: 0 auto; padding: 28px 20px; display: grid; gap: 18px; }
+  .card { background: #fff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 22px 24px; }
+  .card-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 16px; }
+  .upload-zone { border: 2px dashed #cbd5e1; border-radius: 8px; padding: 32px 20px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+  .upload-zone:hover, .upload-zone.drag { border-color: #3b82f6; background: #eff6ff; }
+  .upload-zone input { display: none; }
+  .upload-icon { font-size: 36px; margin-bottom: 8px; }
+  .upload-zone p { color: #475569; font-size: 14px; }
+  .upload-zone span { color: #3b82f6; font-weight: 600; }
+  .file-pill { display: inline-flex; align-items: center; gap: 8px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 20px; padding: 4px 12px; font-size: 13px; color: #166534; margin-top: 10px; }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .metric { background: #f8fafc; border-radius: 8px; padding: 14px 16px; border: 1px solid #e2e8f0; }
+  .metric-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .metric-value { font-size: 26px; font-weight: 700; color: #1e293b; }
+  .metric-value.warn { color: #d97706; }
+  .metric-value.danger { color: #dc2626; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: #64748b; font-weight: 600; margin-bottom: 5px; }
+  .field input { width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; color: #1e293b; background: #fff; }
+  .field input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+  .btn-row { display: flex; gap: 10px; margin-top: 4px; }
+  .btn { padding: 10px 22px; border-radius: 7px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s, transform 0.1s; }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-preview { background: #1e293b; color: #fff; }
+  .btn-send { background: #16a34a; color: #fff; }
+  .btn-preview:hover:not(:disabled) { background: #0f172a; }
+  .btn-send:hover:not(:disabled) { background: #15803d; }
+  .status { font-size: 13px; margin-top: 10px; min-height: 20px; padding: 6px 10px; border-radius: 5px; }
+  .status.info { background: #eff6ff; color: #1d4ed8; }
+  .status.ok { background: #f0fdf4; color: #166534; }
+  .status.err { background: #fef2f2; color: #991b1b; }
+  .preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .btn-copy { padding: 6px 14px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; font-size: 12px; cursor: pointer; font-weight: 600; color: #475569; }
+  .btn-copy:hover { background: #f8fafc; }
+  #preview-box { font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.65; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; white-space: pre; overflow-x: auto; max-height: 440px; overflow-y: auto; color: #1e293b; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hidden { display: none !important; }
+  @media (max-width: 600px) {
+    .metrics { grid-template-columns: repeat(2,1fr); }
+    .form-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="dot"></div>
+  <h1>Device Expiry Report — Email Sender</h1>
+</div>
+<div class="layout">
+  <div class="card">
+    <p class="card-title">1 · Upload Excel file</p>
+    <div class="upload-zone" id="drop-zone" onclick="document.getElementById('xlsxFile').click()"
+         ondragover="ev(event,'drag')" ondragleave="ev(event,'')" ondrop="drop(event)">
+      <input type="file" id="xlsxFile" accept=".xlsx,.xls" onchange="fileChosen(this.files[0])">
+      <div class="upload-icon">📂</div>
+      <p><span>Click to browse</span> or drag &amp; drop</p>
+      <p style="font-size:12px;color:#94a3b8;margin-top:4px">.xlsx · 3 columns: Company · Plate Number · Expiry Date</p>
+    </div>
+    <div id="file-pill" class="hidden">
+      <div class="file-pill" id="pill-text"></div>
+    </div>
+  </div>
+  <div class="card hidden" id="metrics-card">
+    <p class="card-title">Report snapshot</p>
+    <div class="metrics">
+      <div class="metric"><div class="metric-label">Total devices</div><div class="metric-value" id="m-total">—</div></div>
+      <div class="metric"><div class="metric-label">Expiring ≤15 days</div><div class="metric-value warn" id="m-up">—</div></div>
+      <div class="metric"><div class="metric-label">Expired (2 mo)</div><div class="metric-value danger" id="m-2m">—</div></div>
+      <div class="metric"><div class="metric-label">Total expired</div><div class="metric-value" id="m-exp">—</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <p class="card-title">2 · Configure &amp; send</p>
+    <div class="form-row">
+      <div class="field">
+        <label>From (Gmail)</label>
+        <input type="email" id="from-addr" value="{{ gmail_user }}" readonly style="background:#f8fafc;color:#64748b">
+      </div>
+      <div class="field">
+        <label>To</label>
+        <input type="email" id="to-addr" value="{{ default_to }}" placeholder="recipient@example.com">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>Report date</label>
+        <input type="date" id="report-date">
+      </div>
+      <div class="field">
+        <label>CC (optional)</label>
+        <input type="email" id="cc-addr" value="{{ default_cc }}" placeholder="cc@example.com">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-preview" id="btn-preview" onclick="doPreview()" disabled>Preview email</button>
+      <button class="btn btn-send" id="btn-send" onclick="doSend()" disabled>Send email</button>
+    </div>
+    <div class="status hidden" id="status-bar"></div>
+  </div>
+  <div class="card hidden" id="preview-card">
+    <div class="preview-header">
+      <p class="card-title" style="margin:0">3 · Email preview</p>
+      <button class="btn-copy" onclick="copyPreview()">📋 Copy</button>
+    </div>
+    <div id="preview-box"></div>
+  </div>
+</div>
+<script>
+let chosenFile = null;
+const td = new Date();
+document.getElementById('report-date').value = td.toISOString().split('T')[0];
+function ev(e, cls) {
+  e.preventDefault();
+  document.getElementById('drop-zone').className = 'upload-zone' + (cls ? ' ' + cls : '');
+}
+function drop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').className = 'upload-zone';
+  if (e.dataTransfer.files[0]) fileChosen(e.dataTransfer.files[0]);
+}
+function fileChosen(f) {
+  if (!f) return;
+  chosenFile = f;
+  document.getElementById('pill-text').textContent = '✓ ' + f.name + '  (' + (f.size/1024).toFixed(0) + ' KB)';
+  document.getElementById('file-pill').classList.remove('hidden');
+  document.getElementById('btn-preview').disabled = false;
+  document.getElementById('btn-send').disabled = false;
+  document.getElementById('metrics-card').classList.add('hidden');
+  document.getElementById('preview-card').classList.add('hidden');
+  setStatus('', '');
+}
+function setStatus(msg, type) {
+  const el = document.getElementById('status-bar');
+  if (!msg) { el.classList.add('hidden'); return; }
+  el.textContent = msg;
+  el.className = 'status ' + type;
+  el.classList.remove('hidden');
+}
+function buildFormData(includeFile) {
+  const fd = new FormData();
+  if (includeFile) fd.append('excel', chosenFile);
+  fd.append('to_email', document.getElementById('to-addr').value);
+  fd.append('cc_email', document.getElementById('cc-addr').value);
+  const d = document.getElementById('report-date').value;
+  const [y,m,day] = d.split('-');
+  fd.append('report_date', `${day}-${m}-${y}`);
+  return fd;
+}
+function setBtns(loading) {
+  document.getElementById('btn-preview').disabled = loading;
+  document.getElementById('btn-send').disabled = loading;
+}
+async function doPreview() {
+  if (!chosenFile) return;
+  setBtns(true);
+  setStatus('Generating preview…', 'info');
+  try {
+    const res = await fetch('/preview', { method: 'POST', body: buildFormData(true) });
+    const data = await res.json();
+    if (data.error) { setStatus('Error: ' + data.error, 'err'); setBtns(false); return; }
+    document.getElementById('m-total').textContent = data.stats.total;
+    document.getElementById('m-up').textContent = data.stats.upcoming;
+    document.getElementById('m-2m').textContent = data.stats.exp_2m;
+    document.getElementById('m-exp').textContent = data.stats.exp_total;
+    document.getElementById('metrics-card').classList.remove('hidden');
+    document.getElementById('preview-box').textContent = data.preview;
+    document.getElementById('preview-card').classList.remove('hidden');
+    setStatus('Preview ready. Review below, then click Send.', 'ok');
+  } catch(e) { setStatus('Network error: ' + e.message, 'err'); }
+  setBtns(false);
+}
+async function doSend() {
+  if (!chosenFile) return;
+  const to = document.getElementById('to-addr').value.trim();
+  if (!to) { setStatus('Please enter a recipient email address.', 'err'); return; }
+  if (!confirm(`Send email to ${to}?`)) return;
+  setBtns(true);
+  document.getElementById('btn-send').innerHTML = '<span class="spinner"></span>Sending…';
+  setStatus('Sending email with attachment…', 'info');
+  try {
+    const res = await fetch('/send', { method: 'POST', body: buildFormData(true) });
+    const data = await res.json();
+    if (data.error) { setStatus('Error: ' + data.error, 'err'); }
+    else { setStatus('✓ ' + data.message, 'ok'); }
+  } catch(e) { setStatus('Network error: ' + e.message, 'err'); }
+  document.getElementById('btn-send').textContent = 'Send email';
+  setBtns(false);
+}
+function copyPreview() {
+  const txt = document.getElementById('preview-box').textContent;
+  navigator.clipboard.writeText(txt).then(() => {
+    const b = document.querySelector('.btn-copy');
+    b.textContent = '✓ Copied!';
+    setTimeout(() => b.textContent = '📋 Copy', 1800);
+  });
+}
+</script>
+</body>
+</html>"""
 
 @app.route("/")
 def index():
