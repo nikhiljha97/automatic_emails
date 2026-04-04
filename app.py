@@ -43,10 +43,10 @@ def get_anchor(upload_date):
     Day 16–31 of month → anchor = 16th of that month
     """
     day = upload_date.day
-    if day <= 16:
+    if day <= 15:
         return upload_date.replace(day=1,  hour=0, minute=0, second=0, microsecond=0)
     else:
-        return upload_date.replace(day=17, hour=0, minute=0, second=0, microsecond=0)
+        return upload_date.replace(day=16, hour=0, minute=0, second=0, microsecond=0)
 
 def get_upcoming_end(anchor):
     """
@@ -54,10 +54,10 @@ def get_upcoming_end(anchor):
     Anchor = 16th → end = last day of same month
     """
     if anchor.day == 1:
-        return anchor.replace(day=15)
+        return anchor.replace(day=15, hour=23, minute=59, second=59)
     else:
         last_day = calendar.monthrange(anchor.year, anchor.month)[1]
-        return anchor.replace(day=last_day)
+        return anchor.replace(day=last_day, hour=23, minute=59, second=59)
 
 # ── Excel loader ──────────────────────────────────────────────────────────────
 
