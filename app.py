@@ -43,7 +43,7 @@ def get_anchor(upload_date):
     Day 16–31 of month → anchor = 16th of that month
     """
     day = upload_date.day
-    if day <= 15:
+    if day <= 16:
         return upload_date.replace(day=1,  hour=0, minute=0, second=0, microsecond=0)
     else:
         return upload_date.replace(day=16, hour=0, minute=0, second=0, microsecond=0)
