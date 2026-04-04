@@ -46,7 +46,7 @@ def get_anchor(upload_date):
     if day <= 16:
         return upload_date.replace(day=1,  hour=0, minute=0, second=0, microsecond=0)
     else:
-        return upload_date.replace(day=16, hour=0, minute=0, second=0, microsecond=0)
+        return upload_date.replace(day=17, hour=0, minute=0, second=0, microsecond=0)
 
 def get_upcoming_end(anchor):
     """
