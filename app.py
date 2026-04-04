@@ -302,14 +302,173 @@ def build_html_body(buckets, report_date_str):
       {exp_html}
     </body></html>"""
 
+# ── result Excel builder ──────────────────────────────────────────────────────
+
+def build_result_excel(buckets, report_date_str):
+    """
+    Build a formatted Excel workbook mirroring the report structure.
+    Returns bytes of the .xlsx file.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import (Font, PatternFill, Alignment,
+                                  Border, Side, numbers)
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Expiry Report"
+
+    anchor   = buckets["_anchor"]
+    up_start = buckets["_up_start"]
+    up_end   = buckets["_up_end"]
+
+    # ── style helpers ──
+    BLUE_FILL   = PatternFill("solid", fgColor="D6E4F0")   # header rows
+    PINK_FILL   = PatternFill("solid", fgColor="FCE4E4")   # expired detail rows
+    GREEN_FILL  = PatternFill("solid", fgColor="D1FAE5")   # upcoming detail rows
+    GREY_FILL   = PatternFill("solid", fgColor="F1F5F9")   # total rows
+    SECTION_FILL= PatternFill("solid", fgColor="1A1A2E")   # section title
+
+    thin = Side(style="thin", color="CCCCCC")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    bold   = Font(bold=True)
+    white  = Font(bold=True, color="FFFFFF")
+    center = Alignment(horizontal="center", vertical="center")
+
+    def set_col_widths(widths):
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+
+    set_col_widths([35, 20, 22])
+
+    row = 1
+
+    def write_section_title(title, fill_color="1A1A2E", font_color="FFFFFF"):
+        nonlocal row
+        ws.merge_cells(f"A{row}:C{row}")
+        cell = ws[f"A{row}"]
+        cell.value = title
+        cell.font = Font(bold=True, color=font_color, size=12)
+        cell.fill = PatternFill("solid", fgColor=fill_color)
+        cell.alignment = center
+        row += 1
+
+    def write_report_header():
+        nonlocal row
+        ws.merge_cells(f"A{row}:C{row}")
+        cell = ws[f"A{row}"]
+        cell.value = f"Device Expiry Report — {report_date_str}   |   Anchor: {anchor.strftime('%d-%m-%Y')}"
+        cell.font = Font(bold=True, size=13, color="1A1A2E")
+        cell.alignment = center
+        row += 2
+
+    def write_summary_table(records, label):
+        nonlocal row
+        # Section label
+        ws.merge_cells(f"A{row}:C{row}")
+        c = ws[f"A{row}"]
+        c.value = label
+        c.font = Font(bold=True, size=11)
+        c.alignment = Alignment(horizontal="left")
+        row += 1
+
+        # Summary header
+        for col, val in enumerate(["Company", "Device Count"], 1):
+            c = ws.cell(row=row, column=col, value=val)
+            c.font = bold; c.fill = BLUE_FILL; c.border = border; c.alignment = center
+        row += 1
+
+        summary = company_summary(records)
+        for company, count in summary:
+            is_total = (company == "Total")
+            c1 = ws.cell(row=row, column=1, value=company)
+            c2 = ws.cell(row=row, column=2, value=count)
+            for c in [c1, c2]:
+                c.border = border
+                if is_total:
+                    c.font = bold; c.fill = GREY_FILL
+            row += 1
+        row += 1  # blank row
+
+    def write_detail_table(records, detail_fill):
+        nonlocal row
+        # Detail header
+        for col, val in enumerate(["Company", "Plate Number", "Installation Date"], 1):
+            c = ws.cell(row=row, column=col, value=val)
+            c.font = bold; c.fill = BLUE_FILL; c.border = border; c.alignment = center
+        row += 1
+
+        for r in records:
+            vals = [r["company"], r["plate"], fmt_date(r["date"])]
+            for col, val in enumerate(vals, 1):
+                c = ws.cell(row=row, column=col, value=val)
+                c.fill = detail_fill; c.border = border
+            row += 1
+
+        # Total row
+        ws.merge_cells(f"A{row}:B{row}")
+        c1 = ws[f"A{row}"]
+        c1.value = "Total"; c1.font = bold; c1.fill = GREY_FILL; c1.border = border
+        c3 = ws.cell(row=row, column=3, value=len(records))
+        c3.font = bold; c3.fill = GREY_FILL; c3.border = border; c3.alignment = center
+        row += 2  # blank row after section
+
+    # ── Write report ──
+    write_report_header()
+
+    # Upcoming section
+    up = buckets["upcoming"]
+    up_label = f"Upcoming Device Expiry  ({date_range_label(up_start, up_end)})"
+    write_section_title(up_label)
+    write_summary_table(up, "Summary by Company")
+    write_detail_table(up, GREEN_FILL)
+
+    # Expired bands
+    write_section_title("Expired Devices (Grouped by Days)", fill_color="7F1D1D")
+    row += 1
+
+    expired_bands = [
+        ("b1", "Expired — Last 30 days"),
+        ("b2", "Expired — Last 60 days"),
+        ("b3", "Expired — Last 90 days"),
+        ("b4", "Expired — Last 120 days"),
+        ("b5", "Expired — Last 150 days"),
+    ]
+
+    for key, label in expired_bands:
+        recs = buckets[key]
+        if not recs:
+            continue
+        start = buckets[f"_{key}_start"]
+        end   = buckets[f"_{key}_end"]
+        full_label = f"{label}  ({date_range_label(start, end)})"
+        write_section_title(full_label, fill_color="4B5563", font_color="FFFFFF")
+        write_summary_table(recs, "Summary by Company")
+        write_detail_table(recs, PINK_FILL)
+
+    # Freeze header rows
+    ws.freeze_panes = "A3"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
+
 # ── email sender ──────────────────────────────────────────────────────────────
 
-def send_email(to, cc, subject, plain_body, html_body, attachment_bytes, attachment_name):
+def send_email(to, cc, subject, plain_body, html_body, attachments):
+    """
+    attachments: list of {"filename": str, "content": bytes}
+    """
     payload = {
         "from": FROM_EMAIL, "to": [to],
         "subject": subject, "text": plain_body, "html": html_body,
-        "attachments": [{"filename": attachment_name,
-                         "content": base64.b64encode(attachment_bytes).decode("utf-8")}],
+        "attachments": [
+            {"filename": a["filename"],
+             "content": base64.b64encode(a["content"]).decode("utf-8")}
+            for a in attachments
+        ],
     }
     if cc:
         payload["cc"] = [cc]
@@ -612,11 +771,22 @@ def send():
     plain   = build_email_body(buckets, label)
     html    = build_html_body(buckets, label)
     subject = f"Device Expiry Report - {label}"
+
     try:
-        send_email(to_addr, cc_addr, subject, plain, html, file_bytes, filename)
+        result_excel_bytes = build_result_excel(buckets, label)
+        result_filename = f"Expiry_Report_{label.replace('-','_')}.xlsx"
+    except Exception as e:
+        return jsonify({"error": f"Result Excel build error: {e}"}), 500
+
+    attachments = [
+        {"filename": filename,        "content": file_bytes},
+        {"filename": result_filename, "content": result_excel_bytes},
+    ]
+    try:
+        send_email(to_addr, cc_addr, subject, plain, html, attachments)
     except Exception as e:
         return jsonify({"error": f"Email error: {e}"}), 500
-    return jsonify({"success": True, "message": f"Email sent to {to_addr}"})
+    return jsonify({"success": True, "message": f"Email sent to {to_addr} with 2 attachments"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
